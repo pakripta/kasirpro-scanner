@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>KasirPro — Scanner Barcode</title>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+:root{--bg:#e9f1fa;--blue:#00abe4;--blue2:#008fc2;--navy:#203040;--muted:#5f7488;--danger:#a33b48;--success:#176b4c}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--navy)}
+body{padding:18px}.shell{width:min(720px,100%);margin:0 auto}.card{background:var(--bg);border-radius:26px;padding:20px;box-shadow:18px 18px 42px rgba(153,168,185,.55),-14px -14px 32px rgba(255,255,255,.9)}
+.head{display:flex;gap:14px;align-items:center}.icon{width:54px;height:54px;border-radius:18px;display:flex;align-items:center;justify-content:center;background:linear-gradient(145deg,var(--blue),var(--blue2));color:#fff;box-shadow:8px 8px 18px rgba(125,145,165,.35),-6px -6px 14px rgba(255,255,255,.8);font-size:1.4rem}
+h1{font-size:1.2rem;margin:0 0 4px}.sub{color:var(--muted);font-size:.84rem;line-height:1.45}
+.toolbar{display:flex;gap:8px;margin:18px 0 12px}.toolbar select{flex:1;min-width:0;border:0;border-radius:14px;padding:11px 12px;background:var(--bg);color:#30475b;box-shadow:inset 5px 5px 11px rgba(154,169,186,.3),inset -5px -5px 11px rgba(255,255,255,.85)}
+button{border:0;border-radius:14px;padding:11px 16px;font-weight:700;cursor:pointer;background:var(--bg);color:#40586d;box-shadow:8px 8px 16px rgba(153,168,185,.38),-6px -6px 14px rgba(255,255,255,.88)}
+button.primary{background:linear-gradient(145deg,var(--blue),var(--blue2));color:#fff}
+button.danger{background:linear-gradient(145deg,#c8566a,#a33b48);color:#fff}
+button:disabled{opacity:.55;cursor:not-allowed}
+.reader{min-height:310px;border-radius:20px;overflow:hidden;background:#dfeaf3;box-shadow:inset 7px 7px 15px rgba(154,169,186,.3),inset -7px -7px 15px rgba(255,255,255,.8);display:flex;align-items:center;justify-content:center}
+.reader #reader{width:100%}.reader video{width:100%!important;max-height:520px!important;object-fit:contain!important;background:#dfeaf3}
+.status{margin-top:12px;padding:12px 14px;border-radius:14px;background:rgba(255,255,255,.45);box-shadow:inset 5px 5px 11px rgba(154,169,186,.22),inset -5px -5px 11px rgba(255,255,255,.8);color:var(--muted);font-size:.84rem;line-height:1.45}
+.status.ok{color:var(--success);background:#dff2e9}.status.err{color:var(--danger);background:#f8e2e5}
+.result{display:none;margin-top:12px;padding:14px;border-radius:16px;background:#fff;box-shadow:0 8px 20px rgba(80,100,120,.12)}
+.result.show{display:block}.result-label{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.result-code{font:700 1.35rem ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all;margin-top:5px}
+.actions{display:flex;gap:8px;margin-top:12px}.actions button{flex:1}
+.hint{margin-top:14px;color:var(--muted);font-size:.76rem;line-height:1.5;text-align:center}
+@media(max-width:560px){body{padding:10px}.card{padding:15px;border-radius:21px}.toolbar{flex-wrap:wrap}.toolbar select{flex-basis:100%}.toolbar button{flex:1}.reader{min-height:260px}}
+</style>
+</head>
+<body>
+<div class="shell"><main class="card">
+<div class="head"><div class="icon">▣</div><div>
+<h1>Scanner Barcode KasirPro</h1>
+<div class="sub">Arahkan barcode ke kamera — hasil terkirim otomatis ke KasirPro. Biarkan jendela ini terbuka untuk memindai banyak item sekaligus.</div>
+</div></div>
+<div class="toolbar"><select id="cameraSelect" aria-label="Pilih kamera"><option value="">Memilih kamera…</option></select><button id="refreshBtn" title="Muat ulang daftar kamera">↻</button></div>
+<div class="toolbar"><button class="primary" id="startBtn">Aktifkan Kamera</button><button id="stopBtn" disabled>Hentikan</button></div>
+<div class="reader"><div id="reader"></div></div>
+<div class="status" id="status">Klik <strong>Aktifkan Kamera</strong> untuk meminta izin kamera.</div>
+<div class="hint" id="diag" style="text-align:left;margin-top:8px"></div>
+<div class="result" id="result">
+<div class="result-label">Barcode terakhir terbaca</div>
+<div class="result-code" id="resultCode"></div>
+<div class="actions">
+<button id="copyBtn">Salin</button>
+<button class="primary" id="sendBtn">Kirim Ulang</button>
+<button class="danger" id="doneBtn">Selesai &amp; Tutup</button>
+</div>
+</div>
+<div class="hint">Izin kamera ditolak? Klik ikon kamera di address bar jendela ini → Allow → Aktifkan Kamera lagi. Popup diblokir? Izinkan popup dari ikon di address bar KasirPro.</div>
+</main></div>
+<script>
+(() => {
+  // Standalone scanner: parameter diambil langsung dari URL.
+  // Halaman ini tidak bergantung pada HtmlService/ContentService GAS.
+  const params = new URLSearchParams(location.search);
+  const nonce = params.get('nonce') || '';
+  const returnOrigin = params.get('returnOrigin') || '*';
+
+  const cameraSelect = document.getElementById('cameraSelect');
+  const startBtn = document.getElementById('startBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const refreshBtn = document.getElementById('refreshBtn');
+  const statusEl = document.getElementById('status');
+  const diagEl = document.getElementById('diag');
+  const resultEl = document.getElementById('result');
+  const resultCode = document.getElementById('resultCode');
+  const copyBtn = document.getElementById('copyBtn');
+  const sendBtn = document.getElementById('sendBtn');
+  const doneBtn = document.getElementById('doneBtn');
+  let scanner = null, cameras = [], lastBarcode = '', lastScanAt = 0, busy = false;
+  if (diagEl) {
+    diagEl.textContent =
+      'secure=' + String(!!window.isSecureContext) +
+      ' | mediaDevices=' + String(!!navigator.mediaDevices) +
+      ' | Html5Qrcode=' + String(typeof Html5Qrcode !== 'undefined') +
+      ' | opener=' + String(!!window.opener) +
+      ' | nonce=' + String(!!nonce) +
+      ' | origin=' + String(location.origin);
+  }
+
+  const esc = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function status(text, type) { statusEl.className = 'status' + (type ? ' ' + type : ''); statusEl.innerHTML = text; }
+
+  function stopTracks() {
+    document.querySelectorAll('#reader video').forEach(v => {
+      const stream = v.srcObject;
+      if (stream && stream.getTracks) stream.getTracks().forEach(t => t.stop());
+    });
+  }
+  async function stopScanner() {
+    if (scanner) { try { await scanner.stop(); } catch (e) {} try { scanner.clear(); } catch (e) {} scanner = null; }
+    stopTracks();
+    stopBtn.disabled = true; startBtn.disabled = false;
+  }
+  async function listCameras() {
+    if (!window.isSecureContext) {
+      status('Scanner tidak berada pada HTTPS. Kamera browser hanya dapat digunakan pada secure context.', 'err');
+      return [];
+    }
+    if (typeof Html5Qrcode === 'undefined') {
+      status('Library scanner belum termuat. Periksa koneksi internet lalu muat ulang halaman.', 'err');
+      return [];
+    }
+    try {
+      // html5-qrcode meminta izin kamera melalui getCameras(), lalu
+      // mengembalikan {id,label}. Ini lebih konsisten daripada enumerateDevices()
+      // yang dapat mengembalikan label/device yang terbatas sebelum izin diberikan.
+      const devices = await Html5Qrcode.getCameras();
+      cameras = Array.isArray(devices) ? devices : [];
+      cameraSelect.innerHTML = '';
+
+      cameras.forEach((d, i) => {
+        const o = document.createElement('option');
+        o.value = d.id;
+        o.textContent = d.label || ('Kamera ' + (i + 1));
+        cameraSelect.appendChild(o);
+      });
+
+      if (!cameras.length) {
+        cameraSelect.innerHTML = '<option value="">Tidak ada kamera</option>';
+        status('Browser tidak menemukan webcam. Pastikan kamera laptop aktif di Windows dan tidak sedang dikunci Zoom/Teams.', 'err');
+        return [];
+      }
+
+      // Pada laptop tidak ada konsep kamera "belakang"; pilih webcam pertama
+      // yang terdeteksi. Pada perangkat mobile, prioritaskan rear/environment.
+      const preferred = cameras.find(c => /back|rear|environment|belakang/i.test(c.label || ''))
+        || cameras.find(c => /integrated|built.?in|webcam|hd camera|camera/i.test(c.label || ''))
+        || cameras[0];
+
+      if (preferred) cameraSelect.value = preferred.id;
+
+      if (!window.opener) {
+        status('Scanner terbuka tanpa koneksi ke KasirPro. Kamera tetap dapat diuji; hasil akan memerlukan jendela KasirPro sebagai penerima.', 'err');
+      } else {
+        status(cameras.length + ' kamera terdeteksi. Pilih kamera lalu klik <strong>Aktifkan Kamera</strong>.');
+      }
+      return cameras;
+    } catch (e) {
+      console.error('Html5Qrcode.getCameras()', e);
+      const name = e && e.name ? String(e.name) : '';
+      if (name === 'NotAllowedError') {
+        status('Izin kamera belum diberikan. Klik ikon kamera di address bar → <strong>Allow</strong>, lalu klik <strong>Aktifkan Kamera</strong> lagi.', 'err');
+      } else if (name === 'NotFoundError') {
+        status('Tidak ada webcam yang tersedia pada perangkat ini.', 'err');
+      } else if (name === 'SecurityError') {
+        status('Browser menolak akses kamera karena kebijakan keamanan. Pastikan URL scanner adalah HTTPS dan merupakan jendela utama.', 'err');
+      } else {
+        status('Daftar kamera gagal dimuat: ' + esc(e && e.message ? e.message : e), 'err');
+      }
+      return [];
+    }
+  }
+  async function startScanner(cameraId) {
+    if (busy) return;
+    busy = true;
+    await stopScanner();
+
+    if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      busy = false;
+      status('Akses kamera membutuhkan halaman HTTPS yang aman.', 'err');
+      return;
+    }
+    if (typeof Html5Qrcode === 'undefined') {
+      busy = false;
+      status('Engine barcode belum termuat. Muat ulang halaman scanner.', 'err');
+      return;
+    }
+
+    status('Meminta izin kamera…');
+    try {
+      if (!cameraId) {
+        cameras = await listCameras();
+        cameraId = cameras.length ? cameras[0].id : '';
+        if (cameraId) cameraSelect.value = cameraId;
+      }
+
+      if (!cameraId) {
+        throw Object.assign(new Error('Tidak ada kamera yang dapat dipilih.'), { name: 'NotFoundError' });
+      }
+
+      scanner = new Html5Qrcode('reader', {
+        verbose: false,
+        useBarCodeDetectorIfSupported: false,
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.ITF,
+          Html5QrcodeSupportedFormats.QR_CODE
+        ]
+      });
+
+      // Jangan memaksa aspectRatio 16:9: webcam laptop dapat 4:3 atau
+      // rasio lain, dan dokumentasi html5-qrcode memperingatkan rasio yang
+      // tidak cocok dapat membuat video tidak muncul.
+      const config = {
+        fps: 15,
+        qrbox: function(viewfinderWidth, viewfinderHeight) {
+          const width = Math.min(Math.floor(viewfinderWidth * 0.92), 620);
+          const height = Math.min(Math.floor(viewfinderHeight * 0.55), 260);
+          return { width: Math.max(width, 280), height: Math.max(height, 140) };
+        }
+      };
+
+      await scanner.start(
+        { deviceId: { exact: cameraId } },
+        config,
+        onScan,
+        () => {}
+      );
+
+      stopBtn.disabled = false;
+      startBtn.disabled = true;
+      status('Kamera aktif — arahkan barcode ke area scan. Hasil akan dikirim otomatis ke KasirPro.', 'ok');
+    } catch (e) {
+      console.error('startScanner()', e);
+      let msg = 'Kamera tidak dapat dimulai.';
+      const name = e && e.name ? String(e.name) : '';
+      const raw = e && e.message ? String(e.message) : String(e || '');
+
+      if (name === 'NotAllowedError') {
+        msg = 'Izin kamera ditolak. Klik ikon kamera di address bar → <strong>Allow</strong>, lalu klik <strong>Aktifkan Kamera</strong> lagi.';
+      } else if (name === 'NotFoundError') {
+        msg = 'Webcam tidak ditemukan. Pastikan kamera laptop aktif dan tidak dipakai aplikasi lain.';
+      } else if (name === 'NotReadableError') {
+        msg = 'Webcam terdeteksi tetapi sedang dipakai aplikasi lain. Tutup Zoom/Teams/Camera, lalu coba lagi.';
+      } else if (name === 'OverconstrainedError') {
+        msg = 'Kamera menolak konfigurasi yang dipilih. Pilih kamera lain dari daftar lalu coba lagi.';
+      } else if (name === 'SecurityError') {
+        msg = 'Browser memblokir kamera karena kebijakan keamanan. Pastikan scanner dibuka sebagai jendela HTTPS.';
+      } else if (/permission|camera|device|secure|constraint/i.test(raw)) {
+        msg = 'Kamera gagal dibuka: ' + esc(raw);
+      } else {
+        msg = 'Kamera gagal dibuka: ' + esc(raw);
+      }
+
+      status(msg, 'err');
+      await stopScanner();
+    } finally {
+      busy = false;
+    }
+  }
+  function sendBarcode(value) {
+    if (!value) return;
+    if (!window.opener) { status('KasirPro tidak terhubung. Salin barcode lalu tempel manual di aplikasi.', 'err'); return; }
+    try {
+      window.opener.postMessage({ type: 'KASIRPRO_BARCODE', barcode: value, nonce: nonce }, returnOrigin);
+      status('✓ Terkirim ke KasirPro: <strong>' + esc(value) + '</strong> — lanjut scan item berikutnya, atau klik <strong>Selesai</strong>.', 'ok');
+    } catch (e) {
+      status('Hasil scan tidak dapat dikirim ke KasirPro: ' + esc(e.message || e), 'err');
+    }
+  }
+  function onScan(decodedText) {
+    const value = String(decodedText || '').trim();
+    if (!value) return;
+    const now = Date.now();
+    // Barcode sama diabaikan 2 detik (anti-duplikat saat kamera menatap barcode),
+    // barcode berbeda langsung diproses.
+    if (value === lastBarcode && now - lastScanAt < 2000) return;
+    lastBarcode = value; lastScanAt = now;
+    resultCode.textContent = value;
+    resultEl.classList.add('show');
+    try { if (navigator.vibrate) navigator.vibrate(120); } catch (e) {}
+    sendBarcode(value);
+  }
+  startBtn.addEventListener('click', () => startScanner(cameraSelect.value));
+  stopBtn.addEventListener('click', () => stopScanner());
+  refreshBtn.addEventListener('click', () => listCameras());
+  cameraSelect.addEventListener('change', () => { if (startBtn.disabled) startScanner(cameraSelect.value); });
+  copyBtn.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(lastBarcode); status('Barcode disalin ke clipboard.', 'ok'); }
+    catch (e) { status('Clipboard tidak tersedia — salin manual dari kotak hasil.', 'err'); }
+  });
+  sendBtn.addEventListener('click', () => sendBarcode(lastBarcode));
+  doneBtn.addEventListener('click', async () => { await stopScanner(); try { window.close(); } catch (e) {} });
+  window.addEventListener('message', event => {
+    if (event.data && event.data.type === 'KASIRPRO_CLOSE_SCANNER' && event.data.nonce === nonce) {
+      stopScanner().then(() => { try { window.close(); } catch (e) {} });
+    }
+  });
+  window.addEventListener('beforeunload', () => stopTracks());
+  // Jangan meminta izin kamera otomatis saat halaman baru dibuka.
+  // Pengguna mengklik "Aktifkan Kamera"; getCameras() akan meminta izin
+  // pada saat itu sesuai dokumentasi html5-qrcode.
+  status('Klik <strong>Aktifkan Kamera</strong> untuk meminta izin kamera.');
+})();
+</script>
+</body>
+</html>
